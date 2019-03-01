@@ -3,19 +3,21 @@
 
 using System;
 using System.Linq;
+using BotGame.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Bot.Builder;
+using Microsoft.Bot.Builder.Dialogs;
+using Microsoft.Bot.Builder.Integration;
 using Microsoft.Bot.Builder.Integration.AspNet.Core;
 using Microsoft.Bot.Configuration;
 using Microsoft.Bot.Connector.Authentication;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace BotGame
 {
-    /// <summary>
-    /// The Startup class configures services and the request pipeline.
-    /// </summary>
     public class Startup
     {
         public Startup(IHostingEnvironment env)
@@ -29,21 +31,8 @@ namespace BotGame
             Configuration = builder.Build();
         }
 
-        /// <summary>
-        /// Gets the configuration that represents a set of key/value application configuration properties.
-        /// </summary>
-        /// <value>
-        /// The <see cref="IConfiguration"/> that represents a set of key/value application configuration properties.
-        /// </value>
         public IConfiguration Configuration { get; }
 
-        /// <summary>
-        /// This method gets called by the runtime. Use this method to add services to the container.
-        /// </summary>
-        /// <param name="services">The <see cref="IServiceCollection"/> specifies the contract for a collection of service descriptors.</param>
-        /// <seealso cref="IStatePropertyAccessor{T}"/>
-        /// <seealso cref="https://docs.microsoft.com/en-us/aspnet/web-api/overview/advanced/dependency-injection"/>
-        /// <seealso cref="https://docs.microsoft.com/en-us/azure/bot-service/bot-service-manage-channels?view=azure-bot-service-4.0"/>
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddBot<BotGameBot>(options =>
@@ -68,7 +57,38 @@ namespace BotGame
                {
                    await context.SendActivityAsync("Sorry, it looks like something went wrong.");
                };
+
+               IStorage database = new MemoryStorage();
+
+               var _conversationState = new ConversationState(database);
+               var _userState = new UserState(database);
+
+#pragma warning disable CS0618 // Type or member is obsolete
+               options.State.Add(_conversationState);
+               options.State.Add(_userState);
+#pragma warning restore CS0618 // Type or member is obsolete
            });
+
+            services.AddSingleton<BotGameAccessors>(sp =>
+            {
+                // We need to grab the conversationState we added on the options in the previous step
+                var options = sp.GetRequiredService<IOptions<BotFrameworkOptions>>().Value;
+#pragma warning disable CS0618 // Type or member is obsolete
+                var conversationState = options.State.OfType<ConversationState>().FirstOrDefault();
+                var userState = options.State.OfType<UserState>().FirstOrDefault();
+#pragma warning restore CS0618 // Type or member is obsolete
+
+                // Create the custom state accessor.
+                // State accessors enable other components to read and write individual properties of state.
+                var accessors = new BotGameAccessors(conversationState, userState)
+                {
+                    ConversationDialogState = conversationState.CreateProperty<DialogState>("DialogState"),
+                    Usuario = userState.CreateProperty<Usuario>("Usuario"),
+                    Game = userState.CreateProperty<Game>("Game"),
+                };
+
+                return accessors;
+            });
         }
 
         public void Configure(IApplicationBuilder app, IHostingEnvironment env)
